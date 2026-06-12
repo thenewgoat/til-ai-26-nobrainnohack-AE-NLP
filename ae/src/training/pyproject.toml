@@ -1,0 +1,23 @@
+[project]
+name = "ae-training"
+version = "0.1.0"
+description = "PPO training for the TIL-AI 2026 AE (Bomberman) challenge"
+requires-python = ">=3.10"
+dependencies = [
+    "torch",
+    "numpy",
+    "tensorboard",
+    "tyro",
+    "til-environment",
+    "onnx",
+    "onnxruntime",
+    "pillow",
+    "matplotlib",
+    "tqdm>=4.67.3",
+]
+
+[dependency-groups]
+dev = ["pytest"]
+
+[tool.uv.sources]
+til-environment = { path = "../../../til-26-ae", editable = true }

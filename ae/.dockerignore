@@ -1,0 +1,35 @@
+# Excluded from the AE container image. The Dockerfile does `COPY src .`,
+# and this file ensures only the runtime modules land in /workspace —
+# training, tests, dev tooling, caches, and the local venvs stay outside.
+
+# Training pipeline (offline-only) and its caches / venv.
+src/training/
+
+# Tests (not shipped in the container).
+tests/
+
+# Offline tools (build_forage_loops.py, dump_map.py).
+tools/
+
+# Local venvs (we use uv; venvs are recreated per environment).
+**/.venv/
+.venv/
+
+# Python / pytest / OS caches.
+**/__pycache__/
+**/.pytest_cache/
+*.pyc
+*.pyo
+*.pyd
+
+# Project meta / non-runtime.
+.git/
+.gitignore
+.dockerignore
+.github/
+README.md
+SOLUTION.md
+docs/
+logs/
+*.md
+runs/

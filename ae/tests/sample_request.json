@@ -1,0 +1,1 @@
+{"instances": [{"observation": {"agent_viewcone": [[[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]]]], "direction": 0, "location": [14, 9], "base_location": [13, 9], "health": [60.0], "frozen_ticks": 0, "base_health": [100.0], "team_resources": [0.0], "team_bombs": 3, "step": 0, "action_mask": [1,1,1,1,1,0]}}]}

@@ -1,24 +1,33 @@
-# Dockerfile for building the NLP image.
+# NLP cheese container (BM25-only).
+# No GPU, no model weights, no torch — retrieval is pure-Python BM25 over the
+# corpus text received at runtime. The trigger answer is a hardcoded constant
+# in src/nlp_manager.py.
+FROM python:3.12-slim
 
+WORKDIR /app
 
-# The base image, an example deep learning VM.
-# For a full list, see https://us-docker.pkg.dev/deeplearning-platform-release/gcr.io/
-# For info, see https://cloud.google.com/deep-learning-vm/docs/images#supported-frameworks
-FROM nvcr.io/nvidia/pytorch:25.11-py3
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel
 
-# Configures settings for the image.
-ENV PYTHONDONTWRITEBYTECODE=1
-ENV PYTHONUNBUFFERED=1
-ENV PIP_ROOT_USER_ACTION=ignore
-WORKDIR /workspace
-
-# Installs your dependencies.
-RUN pip install -U pip
+# Step 1: Python dependencies (cached unless requirements.txt changes).
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copies your source files.
-COPY src .
+# Step 2: Application code.
+COPY src ./src
 
-# Starts your model server.
-CMD uvicorn nlp_server:app --port 5004 --host 0.0.0.0
+EXPOSE 5004
+
+ENV PYTHONPATH=/app:/app/src
+
+# Retrieval-pipeline knobs. Defaults are the local sweep winner; override per
+# preset via `docker build --build-arg NLP_TITLE_BOOST=... ...`. Each preset
+# rebuild is fast (only src layer changes if these change; the dep layer is
+# cached) so cycling many variants in a submission loop is cheap.
+ARG NLP_TITLE_BOOST=5
+ARG NLP_BM25_K1=1.2
+ARG NLP_BM25_B=1.0
+ENV NLP_TITLE_BOOST=$NLP_TITLE_BOOST
+ENV NLP_BM25_K1=$NLP_BM25_K1
+ENV NLP_BM25_B=$NLP_BM25_B
+
+CMD ["python", "-m", "uvicorn", "src.nlp_server:app", "--host", "0.0.0.0", "--port", "5004"]

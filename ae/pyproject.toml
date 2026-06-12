@@ -1,0 +1,22 @@
+[project]
+name = "ae"
+version = "0.1.0"
+description = "AE (TIL-AI 2026 Bomberman) inference container — runtime deps only"
+requires-python = ">=3.10"
+# These dependencies must match ae/requirements.txt (the Dockerfile installs
+# from that file). Keep them in sync.
+dependencies = [
+    "fastapi",
+    "uvicorn[standard]",
+    "numpy",
+    "onnxruntime",
+]
+
+[dependency-groups]
+dev = [
+    "pytest",
+]
+
+[tool.uv]
+# The runtime venv stays lean and matches the container.
+package = false

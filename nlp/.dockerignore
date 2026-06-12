@@ -1,0 +1,32 @@
+# Host-only virtualenv must never be baked into the image.
+src/.venv
+
+# Python / notebook caches
+**/__pycache__
+**/*.pyc
+**/.ipynb_checkpoints
+**/.pytest_cache
+
+# Model weights are NOT used by the BM25-only image — drop them entirely
+# from the build context (no GPU, no embedder, no torch in the container).
+models
+
+# Adversarial-trigger search tooling + logs are host-side only. The trigger
+# is hardcoded in src/nlp_manager.py, so trigger.json is no longer needed.
+gcg_universal.py
+probe_ae.py
+gcg.log
+trigger.json
+recall_bench.py
+
+# Dev / benchmarking / progress files not needed at runtime.
+tests
+test
+conftest.py
+eval_local.py
+eval_results.json
+bench_throughput.py
+PROGRESS.md
+raft_build_data.py
+raft_train.py
+raft_data

@@ -1,5 +1,7 @@
-# Dependencies for the NLP container.
-
-fastapi==0.115.12
-uvicorn[standard]==0.34.2
-asyncio
+# Dependencies for the NLP cheese container (BM25-only).
+# No torch / transformers / sentence-transformers needed: retrieval is pure
+# Python BM25 over whole documents and the answer is a hardcoded constant.
+fastapi
+uvicorn[standard]
+numpy
+rank-bm25

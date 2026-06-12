@@ -1,4 +1,6 @@
-# Dependencies for AE.
+# Dependencies for the AE container (CPU inference; neural ONNX path).
 
 fastapi
 uvicorn[standard]
+numpy
+onnxruntime
