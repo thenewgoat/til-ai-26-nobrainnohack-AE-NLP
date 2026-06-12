@@ -1,6 +1,6 @@
-"""In-process evaluation harness for the NLP RAG QA pipeline.
+"""In-process evaluation harness for the BM25 + trigger NLP pipeline.
 
-Loads the pipeline and the ModernBERT answer-equivalence scorer, runs the
+Loads the pipeline and the ModernBERT answer-equivalence grader, runs the
 local question set, and reports the competition score under the CURRENT
 scoring contract (test/test_nlp.py):
 
@@ -36,9 +36,6 @@ def main():
     ap.add_argument("--limit", type=int, default=None,
                     help="evaluate only the first N questions")
     args = ap.parse_args()
-
-    # Use the host model cache; the container uses /app/models.
-    nlp_manager.MODELS_DIR = os.path.join(os.path.dirname(__file__), "models")
 
     # Load documents as {"id","document"} dicts, matching the task contract.
     doc_paths = sorted(glob.glob(f"{DATA_DIR}/documents/*.txt"))
