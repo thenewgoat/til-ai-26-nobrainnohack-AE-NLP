@@ -1,8 +1,8 @@
 """DAgger behavior cloning of the `balanced` scripted teacher into the
 SymbolicTransformerActor, then the BC gate.
 
-Same pipeline as run_bc_large.py (200 pure-teacher episodes + 2 x 100 DAgger
-rounds), but trains the transformer actor. Model scale is read from env vars
+DAgger pipeline (200 pure-teacher episodes + 2 x 100 DAgger rounds) training
+the transformer actor. Model scale is read from env vars
 (TF_D_MODEL, TF_N_LAYERS, TF_N_HEADS, TF_FFN_DIM, TF_DROPOUT) so scale sweeps
 need no code edit. Saves ae/src/policy_transformer_bc.pt as {state_dict, cfg}.
 """
