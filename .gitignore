@@ -173,3 +173,5 @@ cython_debug/
 src/gcloud/*.json
 
 data
+
+docs/
