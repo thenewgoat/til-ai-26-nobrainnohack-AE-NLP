@@ -15,12 +15,13 @@ The folder contains two deliverables that share one codebase:
   agent. Never shipped.
 - **`tools/`** — one-off offline utilities (e.g. `dump_map.py`).
 
-There are **two interchangeable agents**, selected at container build/run time:
+There are **three interchangeable agents**, selected at container build/run time:
 
 | Agent | `AE_MODE` | What it is |
 | --- | --- | --- |
 | **Scripted** (default) | `scripted` | Deterministic rule cascade. No neural net. The qualifier submission. |
 | **Neural** | `neural` | Transformer policy, BC-cloned then PPO-trained, served via ONNX. The finals robustness play. |
+| **Hybrid** | `hybrid` | Scripted opener until a handover trigger, then the RL actor (ONNX) for the foraging endgame, under a forced-escape survival floor. The "best of both" finals play. |
 
 ---
 
@@ -190,15 +191,83 @@ a training run. Output → `ae/training/viz/` (gitignored).
 
 ---
 
+## Agent 3 — the hybrid post-opener agent (`src/hybrid_controller.py`)
+
+The hybrid is the **"best of both"** finals play: keep the scripted agent for
+the part it provably dominates — the deterministic opening on a known map
+(walking the opening book, breaching walls, bombing enemy bases) — then **hand
+the wheel to the RL actor** for the open-ended foraging endgame, where a learned
+policy generalises better than a rule cascade against novel opponents.
+
+### Key decision — a latching scripted→RL handover
+
+`scripted/handover.py`'s **`HandoverTrigger`** is the transition. It fires (and
+the controller latches it permanently) the moment **either** condition is met:
+
+- **3 enemy bases destroyed** (`min_destroyed_enemy_bases`) — the opener has
+  demonstrably done its job; **or**
+- **step 100** (`step_fallback`) — a time backstop for adverse seeds where the
+  opener stalls.
+
+Before the trigger: pure scripted opener (`balanced_extreme_opening`). After it:
+the post-handover cascade. The handover is one-way.
+
+### Key decision — the actor runs under a forced-escape floor
+
+Post-handover, the RL actor does **not** have unconditional control. Each tick
+runs `hybrid_controller.post_handover_decision`:
+
+```
+1. forced-escape floor   (scripted/escape.py)  — preempts the actor entirely
+2. RL actor proposes      (the ONNX policy)      — masked-legal action sample
+3. post-decision gates    (body_block_resolve, strike_gate) — may override
+```
+
+The **floor** (`must_force_escape` / `escape_selector`) fires *only* when
+STAYing this tick is **strictly worse for survival** than some escape move — it
+is a bomb-free, don't-die backstop, never an efficiency tweak (escape *speed* is
+left to the actor). When it fires, the actor is not even queried. Otherwise the
+actor proposes and the two **`_POST_GATES`** (`body_block_resolve` for stuck
+agents, `strike_gate` for a free passing bomb on a live base) may transform the
+proposal — but the actor's *original* proposal is what gets recorded for
+training, so gate-overridden ticks still teach the policy.
+
+### Key decision — one shared belief, warmed every tick
+
+`HybridController` owns a single `FeatureBuilder` whose `Belief` is the **one
+source of truth**, and it calls `fb.build(observation)` on *every* tick —
+including pre-handover ones. So when the handover fires, the actor inherits a
+**warm frame-stack** and a fully-populated world model rather than a cold start.
+
+### Training & serving
+
+The post-handover actor is the **same `SymbolicTransformerActor`** as the neural
+agent (same five-tensor `FeatureBuilder` contract, same ONNX export). It is
+trained by a dedicated PPO pipeline that collects and learns from **post-handover
+ticks only** (`training/train_hybrid.py`, `hybrid_ppo.py`, `hybrid_rollout.py`,
+`hybrid_eval.py`, `run_hybrid.py`; diagnostics in `diag_hybrid.py` /
+`diag_oscillation.py`; stage-overlay replays in `viz_stages.py`). See
+`src/training/README.md` for the full hybrid pipeline.
+
+Served by **`HybridAEManager`** (`AE_MODE=hybrid`), which loads the exported
+actor from the **`AE_RL_ACTOR_PATH`** env var (a baked `.onnx`). A missing or
+non-existent path is a **fatal startup error** — the manager never silently
+degrades to scripted.
+
+---
+
 ## Serving (`src/ae_server.py`, `src/ae_manager.py`)
 
 - FastAPI app; `POST /ae` and `GET /health`.
-- `AE_MODE` env var picks the manager: `AEManager` (scripted) or
-  `NeuralAEManager` (ONNX).
-- **No `/reset`** — the eval never calls it. Both managers detect a new round
+- `AE_MODE` env var picks the manager: `AEManager` (scripted),
+  `NeuralAEManager` (ONNX), or `HybridAEManager` (scripted opener → ONNX actor).
+- **No `/reset`** — the eval never calls it. All managers detect a new round
   internally on `step == 0` and reset their belief/feature state.
 - `NeuralAEManager` builds features, runs the ONNX actor, masks illegal
   actions with `-1e8`, and argmaxes.
+- `HybridAEManager` runs the scripted opener until `HandoverTrigger` fires, then
+  the ONNX actor under the forced-escape floor + gates; it requires
+  `AE_RL_ACTOR_PATH` to point at an exported actor `.onnx` (fatal if absent).
 - The raw request body is logged on parse failure for debuggability.
 
 ### Container (`Dockerfile`, `requirements.txt`)
@@ -206,8 +275,9 @@ a training run. Output → `ae/training/viz/` (gitignored).
 - Base `python:3.11-slim` — CPU-only; AE does not need a GPU at serve time.
 - `COPY src .` plus `COPY training/features.py .` — the neural path needs
   `features.py`, which lives in `training/`.
-- Build args: `AE_MODE` (`scripted`/`neural`), `AE_STRATEGY` (which scripted
-  strategy). Both also overridable per `docker run` via `-e`.
+- Build args: `AE_MODE` (`scripted`/`neural`/`hybrid`), `AE_STRATEGY` (which
+  scripted strategy). Both also overridable per `docker run` via `-e`. The
+  `hybrid` mode additionally needs `AE_RL_ACTOR_PATH` (the baked actor `.onnx`).
 - Dependencies: `fastapi`, `uvicorn`, `numpy`, `onnxruntime`. **No torch.**
 
 ---
@@ -310,12 +380,20 @@ docker run -p 5005:5005 ae          # POST observations to http://localhost:5005
 
 ## Current artifacts (`src/`)
 
-- `policy_family_winner_bc.pt` — BC actor cloned from winning balanced-family
-  trajectories (the critic-pretraining and PPO starting point).
-- `policy_rung*_u*.pt`, `policy_best_rung1.pt`, `policy_final.pt` — PPO
-  self-play checkpoints across the ladder.
-- `policy_bc.onnx` — exported actor for the neural serving path.
-- `arena_map.json`, `respawn_map.json` — static deterministic map priors.
+**Committed (the static priors — all the scripted agent needs):**
+
+- `arena_map.json` — wall layout + base/spawn positions (seed-19 novice map).
+- `respawn_map.json` — per-tile collectible respawn delay.
+- `forage_loops.json` — offline endgame patrol loops (used by `forage_loop`).
+- `killboxes.json` — offline-proved guaranteed-kill configs (used by `trap`).
+
+**Not committed (model weights — produced by a training run, gitignored):**
+
+- No `.pt` checkpoints or `.onnx` actors are currently in the tree. The neural
+  (`AE_MODE=neural`) and hybrid (`AE_MODE=hybrid`) paths therefore **cannot be
+  served as-is** — they need a checkpoint trained via `src/training/` and
+  exported to ONNX first (neural → `policy.onnx`; hybrid → the file
+  `AE_RL_ACTOR_PATH` points at). Only the **scripted** path runs out of the box.
 
 ---
 
@@ -327,7 +405,12 @@ docker run -p 5005:5005 ae          # POST observations to http://localhost:5005
   ONNX stages all exist. The original PPO (random opponents, no idle penalty,
   random critic) collapsed to a flat-0 idle policy; the BC warm-start,
   anti-idle shaper, and critic pretraining are the three defenses against that.
-- The finals agent is produced by a real training run on the T4.
+- **Hybrid agent: code complete, serving path wired (`AE_MODE=hybrid`).**
+  Scripted opener → `HandoverTrigger` → RL actor under the forced-escape floor,
+  with its own post-handover PPO pipeline (`train_hybrid.py` & friends). Needs a
+  trained+exported actor at `AE_RL_ACTOR_PATH` to deploy.
+- The finals agent (neural or hybrid) is produced by a real training run on the
+  T4; neither has a committed checkpoint yet (see *Current artifacts*).
 
 ---
 
